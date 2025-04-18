@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Python Code Runner</title>
+    <style>
+        body {
+            font-family: 'Consolas', monospace;
+            margin: 0;
+            padding: 20px;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            max-width: 800px;
+            margin: 0 auto;
+            gap: 10px;
+        }
+        #editor {
+            width: 100%;
+            height: 300px;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            border: 1px solid #444;
+            padding: 10px;
+            font-family: 'Consolas', monospace;
+            font-size: 14px;
+            resize: none;
+        }
+        #input {
+            width: 100%;
+            height: 80px;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            border: 1px solid #444;
+            padding: 10px;
+            font-family: 'Consolas', monospace;
+        }
+        #output {
+            width: 100%;
+            height: 200px;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            border: 1px solid #444;
+            padding: 10px;
+            overflow-y: auto;
+            font-family: 'Consolas', monospace;
+            white-space: pre-wrap;
+        }
+        button {
+            background-color: #0e639c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-family: 'Consolas', monospace;
+        }
+        button:hover {
+            background-color: #1177bb;
+        }
+        .label {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="label">Python Code:</div>
+        <textarea id="editor" spellcheck="false">print("Hello, World!")
+name = input("What's your name? ")
+print(f"Hello, {name}!")</textarea>
+        
+        <div class="label">Input (for your program):</div>
+        <textarea id="input" spellcheck="false"></textarea>
+        
+        <button id="run-btn">Run Python Code</button>
+        
+        <div class="label">Output:</div>
+        <div id="output"></div>
+    </div>
+
+    <script>
+        document.getElementById('run-btn').addEventListener('click', async () => {
+            const code = document.getElementById('editor').value;
+            const input = document.getElementById('input').value;
+            const output = document.getElementById('output');
+            
+            output.textContent = "Running...";
+            
+            try {
+                const response = await fetch('/run', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ code, input }),
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    output.textContent = result.output;
+                } else {
+                    output.textContent = `Error: ${result.error}`;
+                }
+            } catch (err) {
+                output.textContent = `Failed to connect to server: ${err.message}`;
+            }
+        });
+    </script>
+</body>
+</html>
