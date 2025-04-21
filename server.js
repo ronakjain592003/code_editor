@@ -5,45 +5,116 @@ const fs = require('fs');
 const app = express();
 const port = 3000;
 
-// Replace this with your actual Python path
-const PYTHON_PATH = 'C:\\Users\\rj949\\AppData\\Local\\Programs\\Python\\Python313\\python.exe';
+// Configure paths for compilers
+const COMPILERS = {
+  python: 'python',
+  java: { compiler: 'javac', runner: 'java' },
+  c: 'gcc',
+  cpp: 'g++'
+};
 
-// Middleware to parse JSON
 app.use(express.json());
 app.use(express.static('public'));
 
-// Serve the HTML file
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// Cleanup function to delete temporary files
+function cleanUp(files) {
+  files.forEach(file => {
+    if (fs.existsSync(file)) {
+      try {
+        fs.unlinkSync(file);
+      } catch (err) {
+        console.error(`Error deleting ${file}:`, err);
+      }
+    }
+  });
+}
 
-// Endpoint to run Python code
-app.post('/run', (req, res) => {
-    const { code, input } = req.body;
-    
-    // Create a temporary Python file
+// Execute code with timeout
+function executeCommand(command, input, timeout = 5000) {
+  return new Promise((resolve, reject) => {
+    const process = exec(command, { timeout }, (error, stdout, stderr) => {
+      if (error) {
+        if (error.killed) {
+          reject(new Error('Process timed out'));
+        } else {
+          reject(new Error(stderr || error.message));
+        }
+      } else {
+        resolve(stdout);
+      }
+    });
+
+    if (input) {
+      process.stdin.write(input);
+      process.stdin.end();
+    }
+  });
+}
+
+// Language handlers
+const handlers = {
+  async python(code, input) {
     const tempFile = path.join(__dirname, 'temp.py');
     fs.writeFileSync(tempFile, code);
+    const output = await executeCommand(`${COMPILERS.python} "${tempFile}"`, input);
+    cleanUp([tempFile]);
+    return output;
+  },
+
+  async java(code, input) {
+    const classNameMatch = code.match(/public\s+class\s+(\w+)/);
+    if (!classNameMatch) throw new Error('Java code must contain a public class');
     
-    // Execute the Python code
-    const process = exec(`"${PYTHON_PATH}" "${tempFile}"`, (error, stdout, stderr) => {
-        // Delete the temporary file when done
-        fs.unlink(tempFile, () => {});
-        
-        if (error) {
-            return res.status(500).json({ error: stderr || error.message });
-        }
-        
-        res.json({ output: stdout });
-    });
+    const className = classNameMatch[1];
+    const tempDir = path.join(__dirname, 'temp');
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
     
-    // Send input to the process if provided
-    if (input) {
-        process.stdin.write(input);
-        process.stdin.end();
+    const javaFile = path.join(tempDir, `${className}.java`);
+    fs.writeFileSync(javaFile, code);
+
+    try {
+      await executeCommand(`${COMPILERS.java.compiler} "${javaFile}"`);
+      const output = await executeCommand(`${COMPILERS.java.runner} -cp "${tempDir}" ${className}`, input);
+      return output;
+    } finally {
+      cleanUp([javaFile, path.join(tempDir, `${className}.class`)]);
     }
+  },
+
+  async c(code, input, ext = 'c') {
+    const tempFile = path.join(__dirname, `temp.${ext}`);
+    const exeFile = path.join(__dirname, 'temp.exe');
+    
+    fs.writeFileSync(tempFile, code);
+    try {
+      await executeCommand(`${COMPILERS[ext]} "${tempFile}" -o "${exeFile}"`);
+      const output = await executeCommand(`"${exeFile}"`, input);
+      return output;
+    } finally {
+      cleanUp([tempFile, exeFile]);
+    }
+  },
+
+  async cpp(code, input) {
+    return this.c(code, input, 'cpp');
+  }
+};
+
+// API endpoint
+app.post('/run', async (req, res) => {
+  try {
+    const { code, input, language } = req.body;
+    
+    if (!code) throw new Error('No code provided');
+    if (!handlers[language]) throw new Error('Unsupported language');
+    
+    const output = await handlers[language](code, input);
+    res.json({ output });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+  console.log(`Server running at http://localhost:${port}`);
 });
