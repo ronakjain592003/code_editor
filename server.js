@@ -15,6 +15,9 @@ const COMPILERS = {
 
 app.use(express.json());
 app.use(express.static('public'));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Cleanup function to delete temporary files
 function cleanUp(files) {
